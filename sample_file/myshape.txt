@@ -1,0 +1,18 @@
+canvas(256,256)
+title("My draw")
+description("Un dessin fait à l'aide du lexer")
+[RECT,(5,5), 246,246]{couleur=purple;
+remplissage=RGB(20,100,190);}
+[CERCLE,(128,128),110]{
+remplissage=whitesmoke;
+couleur=blue;
+}
+[CERCLE,(128,128),100]{
+remplissage=DeepSkyBlue;
+couleur=blue;
+}
+[LIGNE,(56,110),(200,110)]{couleur=black;}
+[LIGNE,(56,135),(200,135)]{couleur=black;}
+t1[TEXTE,(65,85),"My draw"]
+t1.couleur=LightCyan;
+t1.scale(1.5);

@@ -1,0 +1,358 @@
+%require "2.4"
+
+%{
+
+#include "header/utils.h"
+#include <stdexcept>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <math.h>
+#include <string>
+
+int yyparse (void);
+int yylex(void);
+void yyerror(const std::string&);
+
+%}
+
+%code requires {
+    struct Point {
+      int x, y;
+    };
+}
+%union{
+  double valeur_numerique;
+  char* str;
+  const char* const_str;
+  struct Point point;
+  bool booleen;
+}
+
+/* Fonction */
+%token<str> CANVAS DESCRIPTION TITLE WRITE
+/* Objet */
+%token RECT LIGNE CERCLE TEXTE
+/* Valeur */
+%token<str> VARIABLE
+%token<valeur_numerique> CONSTANTE_NUM
+%token<const_str> CONSTANTE_STR RGB_CODE ATTRIBUT
+%token<point> XY_POINT
+/* Separateur */
+%token  COMMA DOT DOT_COMMA PARENTHESE_GAUCHE PARENTHESE_DROITE CROCHET_GAUCHE CROCHET_DROITE ACCOLADE_GAUCHE ACCOLADE_DROITE
+/* Operateur */
+%token  PLUS  MOINS FOIS  DIVISE  EGAL
+/* Comparateur */
+%token  NEQ LE LEQ GE GEQ EQ 
+%token<str>  FIN
+%token  END
+
+%type<str> Ligne Fonction Object Affectation
+%type<const_str> Multiline SimpleAttribut
+%type<point> ObjectSize
+%type<valeur_numerique> ObjectRay
+%type<booleen> Comparaison
+
+%left VARIABLE
+%left PLUS  MOINS EGAL
+%left FOIS  DIVISE
+%left NEG
+/*%right  PUISSANCE*/
+
+%start Input
+%%
+
+Input:
+    /* Vide */
+  | Input Ligne
+  ;
+
+Ligne:
+    FIN
+  | Fonction FIN
+  | Object FIN  { attrs.clear(); } // On reset les attributs
+  | Affectation FIN { attrs.clear(); } // On reset les attributs
+  | Modifications FIN { attrs.clear(); } // On reset les attributs
+  | Comparaison FIN { cout << ($1 ? "True" : "False") << endl; }
+  | END FIN       { cout << "Good bye!" << endl; return 0; }
+  ;
+
+Fonction:
+    Fonction DOT_COMMA
+  | CANVAS XY_POINT {
+      canevas.w = $2.x;
+      canevas.h = $2.y;
+    }
+  | DESCRIPTION PARENTHESE_GAUCHE Multiline PARENTHESE_DROITE {
+      free(infos.desc);
+      infos.desc = (char*)calloc(strlen($3), sizeof(char));
+      strcpy(infos.desc, $3);
+    }
+  | TITLE PARENTHESE_GAUCHE CONSTANTE_STR PARENTHESE_DROITE {
+      free(infos.title);
+      infos.title = (char*)calloc(strlen($3), sizeof(char));
+      strcpy(infos.title, $3);
+    }
+  | WRITE PARENTHESE_GAUCHE PARENTHESE_DROITE { f_map.execute($1); }
+  ;
+
+Object:
+    CROCHET_GAUCHE RECT COMMA XY_POINT ObjectSize CROCHET_DROITE Attributs{
+      $$ = (char*)"RECT";
+      Rect *r = new Rect($4.x, $4.y, $5.x, $5.y);
+      r->addAttributs(attrs);
+      shapeList.push_back(r);
+    }
+  | CROCHET_GAUCHE LIGNE COMMA XY_POINT COMMA XY_POINT CROCHET_DROITE Attributs{
+      $$ = (char*)"LIGNE";
+      Line *l = new Line($4.x, $4.y, $6.x, $6.y);
+      l->addAttributs(attrs);
+      shapeList.push_back(l);
+    }
+  | CROCHET_GAUCHE CERCLE COMMA XY_POINT ObjectRay CROCHET_DROITE Attributs{
+      $$ = (char*)"CERCLE";
+      Circle *c = new Circle($4.x, $4.y, $5);
+      c->addAttributs(attrs);
+      shapeList.push_back(c);
+    }
+  | CROCHET_GAUCHE TEXTE COMMA XY_POINT COMMA CONSTANTE_STR CROCHET_DROITE Attributs{
+      $$ = (char*)"TEXTE";
+      Text *t = new Text($4.x, $4.y, (const char*)$6);
+      t->addAttributs(attrs);
+      shapeList.push_back(t);
+    }
+  | CROCHET_GAUCHE RECT CROCHET_DROITE Attributs{
+      $$ = (char*)"RECT";
+      Rect *r = new Rect(0, 0, 0, 0);
+      r->addAttributs(attrs);
+      shapeList.push_back(r);
+    }
+  | CROCHET_GAUCHE LIGNE CROCHET_DROITE Attributs{
+      $$ = (char*)"LIGNE";
+      Line *l = new Line(0, 0, 0, 0);
+      l->addAttributs(attrs);
+      shapeList.push_back(l);
+    }
+  | CROCHET_GAUCHE CERCLE CROCHET_DROITE Attributs{
+      $$ = (char*)"CERCLE";
+      Circle *c = new Circle(0, 0, 0);
+      c->addAttributs(attrs);
+      shapeList.push_back(c);
+    }
+  | CROCHET_GAUCHE TEXTE CROCHET_DROITE Attributs{
+      $$ = (char*)"TEXTE";
+      Text *t = new Text(0, 0, "");
+      t->addAttributs(attrs);
+      shapeList.push_back(t);
+    }
+  ;
+
+ObjectSize:
+    /* Vide */ { $$.x = 0; $$.y = 0;}
+ |  COMMA CONSTANTE_NUM COMMA CONSTANTE_NUM { $$.x = $2; $$.y = $4; }
+ ;
+
+ObjectRay:
+    /* Vide */ { $$ = 0;}
+ |  COMMA CONSTANTE_NUM { $$ = $2; }
+ ;
+
+
+Attributs:
+    /* Vide */
+  | ACCOLADE_GAUCHE MultiAttribut ACCOLADE_DROITE
+  ;
+
+MultiAttribut:
+    /* vide */
+  | FIN MultiAttribut
+  | SimpleAttribut DOT_COMMA MultiAttribut
+  ;
+
+SimpleAttribut:
+    ATTRIBUT EGAL VARIABLE {
+      $$ = $1;
+      add_attr($1, $3);
+    }
+  | ATTRIBUT EGAL RGB_CODE {
+      $$ = $1;
+      add_attr($1, $3);
+    }
+  | ATTRIBUT EGAL CONSTANTE_NUM {
+      $$ = $1;
+      std::ostringstream dbl;
+      dbl << $3;
+      add_attr($1, dbl.str());
+    }
+  | ATTRIBUT PARENTHESE_GAUCHE VARIABLE PARENTHESE_DROITE {
+      $$ = $1;
+      add_attr($1, $3);
+    }
+  | ATTRIBUT PARENTHESE_GAUCHE CONSTANTE_NUM PARENTHESE_DROITE {
+      $$ = $1;
+      std::ostringstream dbl;
+      dbl << $3;
+      add_attr($1, dbl.str());
+    }
+  | ATTRIBUT EGAL VARIABLE DOT ATTRIBUT {
+      $$ = $1;
+      try {
+        Shape *s = variables.at($3);
+        add_attr($1, s->getAttributValue($5));
+      } catch (const std::out_of_range &e){
+        cout << "Unknown variable \"" << $1 << "\"." << endl;
+        cout << "Assignation abort." << endl;
+      }
+    }
+  ;
+
+Multiline:
+    CONSTANTE_STR { $$ = $1; }
+  | CONSTANTE_STR FIN Multiline
+  ;
+
+
+Affectation:
+   VARIABLE EGAL Object  {
+      Shape *s = shapeList.back();
+      try {
+        Shape *old_s = variables.at($1);
+        variables.at($1) = s;
+        delete old_s;
+      } catch (const std::out_of_range &e){
+        variables.insert(pair<string, Shape*>($1, s));
+      }
+    }
+  | VARIABLE Object  {
+      Shape *s = shapeList.back();
+      try {
+        Shape *old_s = variables.at($1);
+        variables.at($1) = s;
+        delete old_s;
+      } catch (const std::out_of_range &e){
+        variables.insert(pair<string, Shape*>($1, s));
+      }
+    }
+  ;
+
+Modifications:
+    Modification DOT_COMMA
+  | Modification DOT_COMMA Modifications
+  ;
+
+Modification:
+    VARIABLE DOT VARIABLE EGAL CONSTANTE_NUM {
+      /* Ici on modifie forcement une des coordonnées */
+      try {
+        Shape *s = variables.at($1);
+        std::ostringstream val;
+        val << $5;
+        s->modAttribut($3, val.str());
+      } catch (const std::out_of_range &e){
+        cout << "Unknown variable \"" << $1 << "." << $3 << "\"." << endl;
+      }
+    }
+  | VARIABLE DOT VARIABLE EGAL CONSTANTE_STR {
+      /* Ici on modifie forcement une des coordonnées */
+      try {
+        Shape *s = variables.at($1);
+        s->modAttribut($3, $5);
+      } catch (const std::out_of_range &e){
+        cout << "Unknown variable \"" << $1 << "." << $3 << "\"." << endl;
+      }
+    }
+  | VARIABLE DOT VARIABLE EGAL XY_POINT {
+      /* Ici on modifie plusieurs des coordonnées en une fois */
+      try {
+        Shape *s = variables.at($1);
+        if ($3[0] == 'x' && $3[1] == 'y'){
+          std::ostringstream x; x << $5.x;
+          std::ostringstream y; y << $5.y;
+          if (strlen($3) == 3 && $3[2] == '1'){
+            s->modAttribut("x1", x.str());
+            s->modAttribut("y1", y.str());
+          }
+          else if (strlen($3) == 3 && $3[2] == '2'){
+            s->modAttribut("x2", x.str());
+            s->modAttribut("y2", y.str());
+          }
+          else{
+            s->modAttribut("x", x.str());
+            s->modAttribut("y", y.str());
+          }
+        }
+        else
+          throw logic_error("Only \"x\" and \"y\" can be updated with (x,y).\nEx:rect.xy=(45,80); or line.xy2=(45,80);\n");
+      } catch (const std::logic_error &e){
+        cout << e.what() << endl;
+      }
+    }
+  | VARIABLE DOT SimpleAttribut {
+      try {
+        Shape *s = variables.at($1);
+        s->modAttribut($3, attrs.at($3));
+      } catch (const std::out_of_range &e){
+        cout << "Unknown attribut \"" << $1 << "\"." << endl;
+      }
+    }
+  ;
+
+Comparaison:
+    VARIABLE LE VARIABLE DOT_COMMA {
+      try {          
+        Shape *s1 = variables.at($1);
+        Shape *s2 = variables.at($3);
+        $$ = *s1 < *s2;
+      } catch (const std::out_of_range &e){
+        $$ = false;
+        cout << "One of variable is unknown." << endl;
+      }
+    }
+  | VARIABLE GE VARIABLE DOT_COMMA {
+      try {          
+        Shape *s1 = variables.at($1);
+        Shape *s2 = variables.at($3);
+        $$ = *s1 > *s2;
+      } catch (const std::out_of_range &e){
+        $$ = false;
+        cout << "One of variable is unknown." << endl;
+      }
+    }
+  | VARIABLE EQ VARIABLE DOT_COMMA {
+      try {          
+        Shape *s1 = variables.at($1);
+        Shape *s2 = variables.at($3);
+        $$ = *s1 == *s2;
+      } catch (const std::out_of_range &e){
+        $$ = false;
+        cout << "One of variable is unknown." << endl;
+      }
+    }
+  ;
+
+%%
+
+void yyerror(const std::string& s) {
+  std::cout << s << std::endl;
+}
+
+int main(void) {
+  /* Init */
+  int ret = EXIT_SUCCESS;
+  // Default value
+  canevas.w = 1;
+  canevas.h = 1;
+  infos.title = (char*)calloc(1, sizeof(char));
+  infos.desc = (char*)calloc(1, sizeof(char));
+  // Function pointer
+  f_map.add("canvas", Command<Dimension>(canvas));
+  f_map.add("node", Command<const char*, const char*>(node));
+  f_map.add("write", Command<>(write_file));
+
+  /* Run */
+  yyparse();
+  write_file();
+  free_memory();
+
+  return ret;
+}
